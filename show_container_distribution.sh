@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
-# usage: bash show_container_distribution.sh $PROJECT_ID $ENV
+# usage: bash show_container_distribution.sh [--csv] $PROJECT_ID $ENV
+
+# Parse flags
+CSV_MODE=false
+POSITIONAL_ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --csv) CSV_MODE=true ;;
+        *) POSITIONAL_ARGS+=("$arg") ;;
+    esac
+done
+set -- "${POSITIONAL_ARGS[@]}"
 
 # Auto-detect CLI: prefer upsun, fall back to platform
 if command -v upsun >/dev/null 2>&1; then
@@ -25,10 +36,11 @@ if [ $# -eq 0 ]; then
         echo "Error: no project ID found. Please supply the project_id as parameter:" >&2
         echo "" >&2
         echo "Usage: " >&2
-        echo "  bash show_container_distribution.sh \$PROJECT_ID \$ENV_NAME (defaults to: main)" >&2
+        echo "  bash show_container_distribution.sh [--csv] \$PROJECT_ID \$ENV_NAME (defaults to: main)" >&2
         echo "" >&2
         echo "For example: " >&2
         echo "  bash show_container_distribution.sh szr3gqubqrd2y master" >&2
+        echo "  bash show_container_distribution.sh --csv szr3gqubqrd2y master" >&2
         exit 1
     fi
 else
@@ -89,10 +101,16 @@ if [ ${#services[@]} -eq 0 ]; then
 fi
 
 echo ""
-printf "\e[4;38;2;96;70;255m%-35s %10s %10s %10s %10s %10s\e[0m\n" \
-  "Service" "CPU" "Mem(MB)" "CPU (%)" "Mem (%)" "Disk (%)"
 
-echo ""
+# Print header
+if [ "$CSV_MODE" = true ]; then
+    printf "Service\tCPU\tMem(MB)\tCPU (%%)\tMem (%%)\tDisk (%%)\n"
+else
+    printf "\e[4;38;2;96;70;255m%-35s %10s %10s %10s %10s %10s\e[0m\n" \
+      "Service" "CPU" "Mem(MB)" "CPU (%)" "Mem (%)" "Disk (%)"
+    echo ""
+fi
+
 for service in "${services[@]}"; do
     # Get CPU limit and usage
     cpu=$($CMD cpu --columns limit,percent --service="$service" -1 --format csv --no-header -p "$PROJECT_ID" -e "$ENV" 2>/dev/null | tr -d '\n')
@@ -115,23 +133,31 @@ for service in "${services[@]}"; do
     sum_cpu=$(awk "BEGIN{print $cpu_limit + $sum_cpu}")
     sum_mem=$((mem_limit + sum_mem))
 
-    # Make it red if above 90%
-    cpu_color=$([ "${cpu_usage:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
-    mem_color=$([ "${mem_usage:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
-    disk_color=$([ "${disk_percent:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
+    if [ "$CSV_MODE" = true ]; then
+        printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$service" "$cpu_limit" "$mem_limit" "$cpu_usage" "$mem_usage" "$disk_percent"
+    else
+        # Make it red if above 90%
+        cpu_color=$([ "${cpu_usage:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
+        mem_color=$([ "${mem_usage:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
+        disk_color=$([ "${disk_percent:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
 
-    printf "\e[38;2;221;249;51m%-35s\e[0m %10s %10s ${cpu_color}%10s\e[0m ${mem_color}%10s\e[0m ${disk_color}%10s\e[0m\n" \
-      "$service" "$cpu_limit" "$mem_limit" "$cpu_usage" "$mem_usage" "$disk_percent"
+        printf "\e[38;2;221;249;51m%-35s\e[0m %10s %10s ${cpu_color}%10s\e[0m ${mem_color}%10s\e[0m ${disk_color}%10s\e[0m\n" \
+          "$service" "$cpu_limit" "$mem_limit" "$cpu_usage" "$mem_usage" "$disk_percent"
+    fi
 done
-echo " "
 
-# Total row (same color as header, #6046ff)
-printf "\e[38;2;96;70;255m%-35s %10.2f %10s %10s %10s %10s\e[0m\n" \
-  "Total" "$sum_cpu" "$sum_mem" "" "" ""
+if [ "$CSV_MODE" = true ]; then
+    printf "Total\t%.2f\t%s\t\t\t\n" "$sum_cpu" "$sum_mem"
+else
+    echo " "
+    # Total row (same color as header, #6046ff)
+    printf "\e[38;2;96;70;255m%-35s %10.2f %10s %10s %10s %10s\e[0m\n" \
+      "Total" "$sum_cpu" "$sum_mem" "" "" ""
 
-echo " "
-echo "Plan:"
-$CMD project:info subscription -p "$PROJECT_ID" | grep -e 'plan:' -e production | sed -e 's/medium/max_cpu: 2.09, max_memory: 3072/g'
+    echo " "
+    echo "Plan:"
+    $CMD project:info subscription -p "$PROJECT_ID" | grep -e 'plan:' -e production | sed -e 's/medium/max_cpu: 2.09, max_memory: 3072/g'
+fi
 
 if [ ${#skipped_services[@]} -gt 0 ]; then
     echo ""
