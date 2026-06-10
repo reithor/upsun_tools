@@ -17,6 +17,8 @@ if command -v upsun >/dev/null 2>&1; then
     CMD="upsun"
 elif command -v platform >/dev/null 2>&1; then
     CMD="platform"
+elif command -v ibexa_cloud >/dev/null 2>&1; then
+    CMD="ibexa_cloud"
 else
     echo "Error: neither 'upsun' nor 'platform' CLI found. Please install one of them." >&2
     exit 1
