@@ -6,7 +6,7 @@ Get a nice overview of how your plan resources are distributed to containers. It
 
 ## Screenshot
 
-![Resources Overview](/screenshots/show_container_distribution.png?raw=true "Container distribution overview")
+<img alt="show_container_distribution" src="https://github.com/user-attachments/assets/316a6c27-395f-416a-b380-7d5f56454530" />
 
 ## Usage
 
