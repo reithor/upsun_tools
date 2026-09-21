@@ -53,6 +53,7 @@ fi
 ENV="${2:-main}"
 sum_cpu=0
 sum_mem=0
+sum_disk=0
 skipped_services=()
 
 
@@ -106,10 +107,10 @@ echo ""
 
 # Print header
 if [ "$CSV_MODE" = true ]; then
-    printf "Service\tCPU\tMem(MB)\tCPU (%%)\tMem (%%)\tDisk (%%)\n"
+    printf "Service\tCPU\tMem(MB)\tDisk(MB)\tCPU (%%)\tMem (%%)\tDisk (%%)\n"
 else
-    printf "\e[4;38;2;96;70;255m%-35s %10s %10s %10s %10s %10s\e[0m\n" \
-      "Service" "CPU" "Mem(MB)" "CPU (%)" "Mem (%)" "Disk (%)"
+    printf "\e[4;38;2;96;70;255m%-35s %10s %10s %10s %10s %10s %10s\e[0m\n" \
+      "Service" "CPU" "Mem(MB)" "Disk(MB)" "CPU (%)" "Mem (%)" "Disk (%)"
     echo ""
 fi
 
@@ -129,32 +130,40 @@ for service in "${services[@]}"; do
     mem_usage=$(echo "$mem" | cut -d, -f2)
     mem_limit=$((mem_limit / 1024 / 1024))
 
-    # Get disk usage
-    disk_percent=$($CMD disk --columns percent --service="$service" -1 --format csv --no-header --bytes -p "$PROJECT_ID" -e "$ENV" 2>/dev/null | tr -d '\n')
+    # Get disk limit and usage
+    disk=$($CMD disk --columns limit,percent --service="$service" -1 --format csv --no-header --bytes -p "$PROJECT_ID" -e "$ENV" 2>/dev/null | tr -d '\n')
+    disk_limit=$(echo "$disk" | cut -d, -f1)
+    disk_percent=$(echo "$disk" | cut -d, -f2)
+    if [ -n "$disk_limit" ] && [ "$disk_limit" -gt 0 ] 2>/dev/null; then
+        disk_limit=$((disk_limit / 1024 / 1024))
+    else
+        disk_limit=0
+    fi
 
     sum_cpu=$(awk "BEGIN{print $cpu_limit + $sum_cpu}")
     sum_mem=$((mem_limit + sum_mem))
+    sum_disk=$((disk_limit + sum_disk))
 
     if [ "$CSV_MODE" = true ]; then
-        printf "%s\t%s\t%s\t%s\t%s\t%s\n" "$service" "$cpu_limit" "$mem_limit" "$cpu_usage" "$mem_usage" "$disk_percent"
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$service" "$cpu_limit" "$mem_limit" "$disk_limit" "$cpu_usage" "$mem_usage" "$disk_percent"
     else
         # Make it red if above 90%
         cpu_color=$([ "${cpu_usage:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
         mem_color=$([ "${mem_usage:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
         disk_color=$([ "${disk_percent:-0}" -ge 90 ] 2>/dev/null && echo -e "\e[38;2;255;0;0m")
 
-        printf "\e[38;2;221;249;51m%-35s\e[0m %10s %10s ${cpu_color}%10s\e[0m ${mem_color}%10s\e[0m ${disk_color}%10s\e[0m\n" \
-          "$service" "$cpu_limit" "$mem_limit" "$cpu_usage" "$mem_usage" "$disk_percent"
+        printf "\e[38;2;221;249;51m%-35s\e[0m %10s %10s %10s ${cpu_color}%10s\e[0m ${mem_color}%10s\e[0m ${disk_color}%10s\e[0m\n" \
+          "$service" "$cpu_limit" "$mem_limit" "$disk_limit" "$cpu_usage" "$mem_usage" "$disk_percent"
     fi
 done
 
 if [ "$CSV_MODE" = true ]; then
-    printf "Total\t%.2f\t%s\t\t\t\n" "$sum_cpu" "$sum_mem"
+    printf "Total\t%.2f\t%s\t%s\t\t\t\n" "$sum_cpu" "$sum_mem" "$sum_disk"
 else
     echo " "
     # Total row (same color as header, #6046ff)
-    printf "\e[38;2;96;70;255m%-35s %10.2f %10s %10s %10s %10s\e[0m\n" \
-      "Total" "$sum_cpu" "$sum_mem" "" "" ""
+    printf "\e[38;2;96;70;255m%-35s %10.2f %10s %10s %10s %10s %10s\e[0m\n" \
+      "Total" "$sum_cpu" "$sum_mem" "$sum_disk" "" "" ""
 
     echo " "
     echo "Plan:"
